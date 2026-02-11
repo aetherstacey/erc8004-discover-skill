@@ -1,3 +1,8 @@
+---
+name: ERC-8004 Agent Discovery
+description: Search and discover 43k+ AI agents registered via ERC-8004. Find agents by skill, chain, or reputation. View leaderboards, ecosystem stats, and monitor metadata changes.
+---
+
 # ERC-8004 Agent Discovery
 
 Search, discover, and monitor AI agents registered via ERC-8004 using the Agentscan API.
