@@ -444,6 +444,116 @@ def cmd_skills(args):
     print("\n" + "=" * 50)
 
 
+def cmd_monitor(args):
+    """Monitor an agent for changes."""
+    import os
+    import hashlib
+
+    agent_id = args.agent_id
+    print(f"Monitoring agent: {agent_id}...")
+
+    # Fetch current state from Agentscan
+    agents = fetch_agents_pages(max_pages=5)
+
+    # Find matching agent
+    agent_id_lower = agent_id.lower()
+    found = None
+
+    for agent in agents:
+        address = (agent.get("address") or "").lower()
+        token_id = str(agent.get("token_id") or "")
+        name = (agent.get("name") or "").lower()
+
+        if (agent_id_lower == address or
+            agent_id_lower in address or
+            agent_id_lower == token_id or
+            agent_id_lower == name or
+            agent_id_lower in name):
+            if args.chain and not matches_chain(agent, args.chain):
+                continue
+            found = agent
+            break
+
+    if not found:
+        print(f"Agent '{agent_id}' not found.", file=sys.stderr)
+        sys.exit(1)
+
+    # Create a stable identifier for the cache file
+    cache_id = found.get("address") or found.get("token_id") or agent_id
+    cache_id = cache_id.replace("0x", "").lower()[:20]
+    cache_file = f"/tmp/erc8004-monitor-{cache_id}.json"
+
+    # Current state (normalize for comparison)
+    current_state = {
+        "name": found.get("name"),
+        "description": found.get("description"),
+        "reputation_score": found.get("reputation_score"),
+        "skills": found.get("skills") or [],
+        "domains": found.get("domains") or [],
+        "status": found.get("status"),
+        "metadata_uri": found.get("metadata_uri"),
+        "owner_address": found.get("owner_address"),
+    }
+
+    # Load cached state
+    cached_state = None
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r") as f:
+                cached_state = json.load(f)
+        except Exception:
+            cached_state = None
+
+    # Compare and report
+    if cached_state is None:
+        print(f"\nFirst check for this agent. Saving baseline state.")
+        print(f"Cache file: {cache_file}")
+        print(f"\nCurrent state:")
+        print(f"  Name: {current_state['name'] or '-'}")
+        print(f"  Description: {(current_state['description'] or '-')[:60]}")
+        print(f"  Reputation: {format_reputation(current_state['reputation_score'])}")
+        print(f"  Skills: {', '.join(current_state['skills']) or '-'}")
+        print(f"  Status: {current_state['status'] or '-'}")
+    else:
+        # Find differences
+        changes = []
+        for key in current_state:
+            old_val = cached_state.get(key)
+            new_val = current_state.get(key)
+            if old_val != new_val:
+                changes.append((key, old_val, new_val))
+
+        if not changes:
+            print(f"\nNo changes detected since last check.")
+            print(f"  Name: {current_state['name'] or '-'}")
+            print(f"  Reputation: {format_reputation(current_state['reputation_score'])}")
+        else:
+            print(f"\n⚠️  CHANGES DETECTED ({len(changes)}):\n")
+            for key, old_val, new_val in changes:
+                # Format values for display
+                if isinstance(old_val, list):
+                    old_str = ", ".join(old_val) if old_val else "(empty)"
+                else:
+                    old_str = str(old_val)[:40] if old_val else "(none)"
+
+                if isinstance(new_val, list):
+                    new_str = ", ".join(new_val) if new_val else "(empty)"
+                else:
+                    new_str = str(new_val)[:40] if new_val else "(none)"
+
+                print(f"  {key}:")
+                print(f"    - OLD: {old_str}")
+                print(f"    + NEW: {new_str}")
+                print()
+
+    # Update cache
+    try:
+        with open(cache_file, "w") as f:
+            json.dump(current_state, f, indent=2)
+    except Exception as e:
+        print(f"Warning: Could not update cache file: {e}", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="ERC-8004 Agent Discovery Tool - Search and discover registered AI agents",
@@ -487,6 +597,11 @@ Examples:
     skills_parser = subparsers.add_parser("skills", help="List all skills/capabilities")
     skills_parser.add_argument("--list", "-l", action="store_true", help="List format")
 
+    # monitor command
+    monitor_parser = subparsers.add_parser("monitor", help="Monitor an agent for changes")
+    monitor_parser.add_argument("agent_id", help="Agent address, token ID, or name to monitor")
+    monitor_parser.add_argument("--chain", "-c", help="Filter by chain (for disambiguation)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -499,6 +614,7 @@ Examples:
         "info": cmd_info,
         "stats": cmd_stats,
         "skills": cmd_skills,
+        "monitor": cmd_monitor,
     }
 
     commands[args.command](args)
