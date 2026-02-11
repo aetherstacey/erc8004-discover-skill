@@ -231,7 +231,7 @@ def cmd_search(args):
         results = [a for a in results if (a.get("reputation_score") or 0) >= args.min_rep]
 
     if args.has_services:
-        results = [a for a in results if agent.get("skills") or agent.get("domains")]
+        results = [a for a in results if a.get("skills") or a.get("domains")]
 
     # Sort by reputation (highest first)
     results.sort(key=lambda a: float(a.get("reputation_score") or 0), reverse=True)
